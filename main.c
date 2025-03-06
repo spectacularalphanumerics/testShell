@@ -1,19 +1,47 @@
 #include <stdio.h>
-#include <iostream>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <stdlib.h>
 
+#define LSH_TOK_BUFSIZE 64
+#define LSH_TOK_DELIM " \t\r\n\a"
 
+// Function declarations
+void lsh_loop(void);
+char *lsh_read_line(void);
+char **lsh_split_line(char *line);
+int lsh_launch(char **args);
+int lsh_execute(char **args);
+int lsh_cd(char **args);
+int lsh_help(char **args);
+int lsh_exit(char **args);
+
+// List of builtin commands
+char *builtin_str[] = {
+    "cd",
+    "help",
+    "exit"
+};
+
+// Corresponding functions for builtin commands
+int (*builtin_func[]) (char **) = {
+    &lsh_cd,
+    &lsh_help,
+    &lsh_exit
+};
+
+int lsh_num_builtins() {
+    return sizeof(builtin_str) / sizeof(char *);
+}
 
 int main() {
-    //      load config files, if existant
+    // Load config files, if any
 
-    //      run command loop
-    lsh_loop();;
+    // Run command loop
+    lsh_loop();
 
-    //      perform shutdown/cleanup
+    // Perform shutdown/cleanup
 
     return EXIT_SUCCESS;
 }
@@ -24,9 +52,9 @@ void lsh_loop() {
     int status;
 
     do {
-        printf("~~");
+        printf("~~ ");
         line = lsh_read_line();
-        args = lsh_split_line();
+        args = lsh_split_line(line);
         status = lsh_execute(args);
 
         free(line);
@@ -36,11 +64,11 @@ void lsh_loop() {
 
 char *lsh_read_line() {
     char *line = NULL;
-    ssize_t bufsize = 0;    //      we will let getline allocate the buffer for us
+    ssize_t bufsize = 0;
 
     if (getline(&line, &bufsize, stdin) == -1) {
         if (feof(stdin)) {
-            exit(EXIT_SUCCESS);     //      if we recieve EOF (user presses ctrl + d or file of commands at end)
+            exit(EXIT_SUCCESS);  // Exit on EOF (Ctrl+D)
         } else {
             perror("readline");
             exit(EXIT_FAILURE);
@@ -50,18 +78,13 @@ char *lsh_read_line() {
     return line;
 }
 
-/*
- *      To simplify things we will use whitespace to seperate arguments and won't allow backslashes.
- *      echo "this message"     runs echo with two parameters, "this    and     message"
- */
-
 char **lsh_split_line(char *line) {
     int bufsize = LSH_TOK_BUFSIZE, position = 0;
     char **tokens = malloc(bufsize * sizeof(char *));
     char *token;
 
     if (!tokens) {
-        fprintf(stderr, "lshL allocation error\n");
+        fprintf(stderr, "lsh: allocation error\n");
         exit(EXIT_FAILURE);
     }
 
@@ -71,73 +94,45 @@ char **lsh_split_line(char *line) {
         position++;
 
         if (position >= bufsize) {
-            bufize += LSH_TOK_BUFSIZE;
+            bufsize += LSH_TOK_BUFSIZE;
             tokens = realloc(tokens, bufsize * sizeof(char *));
             if (!tokens) {
-                fprintf(stderr, "lshL allocation error\n");
+                fprintf(stderr, "lsh: allocation error\n");
                 exit(EXIT_FAILURE);
             }
         }
+
         token = strtok(NULL, LSH_TOK_DELIM);
     }
     tokens[position] = NULL;
     return tokens;
 }
 
-//      launch a program
 int lsh_launch(char **args) {
     pid_t pid, wpid;
     int status;
 
     pid = fork();
     if (pid == 0) {
+        // Child process
         if (execvp(args[0], args) == -1) {
             perror("lsh");
         }
         exit(EXIT_FAILURE);
     } else if (pid < 0) {
+        // Error forking
         perror("lsh");
     } else {
+        // Parent process
         do {
             wpid = waitpid(pid, &status, WUNTRACED);
         } while (!WIFEXITED(status) && !WIFSIGNALED(status));
     }
-    return -1;
+
+    return 1;
 }
 
-
-
-/*
-  Function Declarations for builtin shell commands:
- */
-int lsh_cd(char **args);
-int lsh_help(char **args);
-int lsh_exit(char **args);
-
-/*
-  List of builtin commands, followed by their corresponding functions.
- */
-char *builtin_str[] = {
-    "cd",
-    "help",
-    "exit"
-  };
-
-int (*builtin_func[]) (char **) = {
-    &lsh_cd,
-    &lsh_help,
-    &lsh_exit
-  };
-
-int lsh_num_builtins() {
-    return sizeof(builtin_str) / sizeof(char *);
-}
-
-/*
-  Builtin function implementations.
-*/
-int lsh_cd(char **args)
-{
+int lsh_cd(char **args) {
     if (args[1] == NULL) {
         fprintf(stderr, "lsh: expected argument to \"cd\"\n");
     } else {
@@ -148,10 +143,9 @@ int lsh_cd(char **args)
     return 1;
 }
 
-int lsh_help(char **args)
-{
+int lsh_help(char **args) {
     int i;
-    printf("spectacularalphanumeric's LSH\n");
+    printf("SpectacularAlphanumeric's LSH\n");
     printf("Type program names and arguments, and hit enter.\n");
     printf("The following are built in:\n");
 
@@ -163,22 +157,15 @@ int lsh_help(char **args)
     return 1;
 }
 
-int lsh_exit(char **args)
-{
+int lsh_exit(char **args) {
     return 0;
 }
-
-
-/*
- *      last missing function lsh_execute
- *      this will either launch the builtin or a process
- */
 
 int lsh_execute(char **args) {
     int i;
 
     if (args[0] == NULL) {
-        // empty command, ignore
+        // Empty command
         return 1;
     }
 
@@ -190,4 +177,3 @@ int lsh_execute(char **args) {
 
     return lsh_launch(args);
 }
-
